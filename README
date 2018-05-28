@@ -1,1 +1,1 @@
-My work is stored here
+由于原始文件中的GPSR算法已经自带速度计算功能，为了更好的实验效果，把原始算法中自带的速度计算功能去除掉，再进行对比。同同时将GaussMarkovModel选作移动模型。

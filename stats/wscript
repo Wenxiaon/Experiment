@@ -5,8 +5,8 @@ def build(bld):
     obj.source = ['wifi-example-sim.cc',
                   'wifi-example-apps.cc']
 
-    obj = bld.create_ns3_program('new-manet-routing-compare',
-                                 ['wifi', 'dsr', 'dsdv', 'aodv', 'olsr', 'internet', 'applications', 'gpsr', 'location-service'])
-    obj.source = ['manet-routing-compare.cc',
+    obj = bld.create_ns3_program('routing-experiment',
+                                 ['wifi', 'dsr', 'dsdv', 'aodv', 'olsr', 'internet', 'applications', 'gpsr', 'location-service', 'mygpsr'])
+    obj.source = ['routing-experiment.cc',
                   'wifi-example-apps.cc']
 

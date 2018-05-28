@@ -1,17 +1,18 @@
-#include "gpsr-ptable.h"
+#include "mygpsr-ptable.h"
 #include "ns3/simulator.h"
 #include "ns3/log.h"
 #include <algorithm>
 #include <cmath>
+#include <Eigen/Dense>
 
-NS_LOG_COMPONENT_DEFINE ("GpsrTable");
+NS_LOG_COMPONENT_DEFINE ("MyGpsrTable");
 
 
 namespace ns3 {
-namespace gpsr {
+namespace mygpsr {
 
 /*
-   GPSR position table
+   MYGPSR position table
  */
 
 PositionTable::PositionTable ()
@@ -37,7 +38,7 @@ PositionTable::GetEntryUpdateTime (Ipv4Address id)
  */
 //TODO finish velocity
 void
-PositionTable::AddEntry (Ipv4Address id, Vector position)
+PositionTable::AddEntry (Ipv4Address id, Vector position, Vector velocity)
 {
         std::map<Ipv4Address, Metrix >::iterator i = m_table.find (id);
 
@@ -47,7 +48,9 @@ PositionTable::AddEntry (Ipv4Address id, Vector position)
                 m_table.erase (id);
                 Metrix metrix;
                 metrix.position=position;
-                //metrix.velocity=velocity;
+                metrix.velocity.push_back(velocity);//mine
+                if (metrix.velocity.size() >= 4)
+                        metrix.velocity.erase(metrix.velocity.begin());
                 metrix.time=Simulator::Now ();
                 m_table.insert (std::make_pair (id, metrix));
                 return; // 必须返回，否则后面没有办法进行
@@ -57,6 +60,7 @@ PositionTable::AddEntry (Ipv4Address id, Vector position)
         Metrix metrix;
         metrix.position=position;
         metrix.time=Simulator::Now ();
+        metrix.velocity.push_back(velocity);
         m_table.insert (std::make_pair (id, metrix));
 
 }
@@ -185,7 +189,7 @@ PositionTable::Clear ()
 }
 
 /**
- * \brief Gets next hop according to GPSR protocol
+ * \brief Gets next hop according to MYGPSR protocol
  * \param position the position of the destination node
  * \param nodePos the position of the node that has the packet
  * \return Ipv4Address of the next hop, Ipv4Address::GetZero () if no nighbour was found in greedy mode
@@ -255,10 +259,14 @@ PositionTable::Clear ()
 // }
 
 Ipv4Address
-PositionTable::BestNeighbor (Vector position, Vector nodePos, Vector nodeVec)
+PositionTable::BestNeighbor (Vector position, Vector nodePos, Time interval, double range)
 {
   Purge ();
 
+  TableUpdate(interval);
+
+  //through physical layer get the communication range
+  
   double initialDistance = CalculateDistance (nodePos, position);
 
   if (m_table.empty ())
@@ -267,33 +275,48 @@ PositionTable::BestNeighbor (Vector position, Vector nodePos, Vector nodeVec)
       return Ipv4Address::GetZero ();
     }     //if table is empty (no neighbours)
 
-  std::list<Ipv4Address> candidate;
+  Ipv4Address candidate = Ipv4Address::GetZero();
+  
+   //equal my address
   std::map<Ipv4Address, Metrix >::iterator i;
 
-  struct myPair
-  {
-          Ipv4Address first;
-          Metrix second;
-  }bestHold;
-
-  bestHold.first = Ipv4Address::GetZero();
-  
   for (i = m_table.begin (); !(i == m_table.end ()); i++)
     {
-
-      if (initialDistance>CalculateDistance (i->second.position, position))
-      //if (initialDistance>CalculateDistance ((i->second.position,position) position))
+      if (CalculateDistance(i->second.position, nodePos) < range)
+      {
+        if (initialDistance>CalculateDistance (i->second.position, position))
+        //if (initialDistance>CalculateDistance ((i->second.position,position) position))
         {
-          if (CalculateDistance(bestHold.second.position, position)>CalculateDistance(i->second.position, position))
-          {
-                  bestHold.first = i->first;
-                  bestHold.second = i->second;
-          }
+        //if CalculateDistance(i->second.position, position)<CalculateDistance(m_table.find(candidate)->second.position, position)
+        candidate = i->first;
+        break; //so i equals what? it need to be tested
         }
+      }
     }
-  
-    return bestHold.first;
 
+  for (std::map<Ipv4Address, Metrix>::iterator j = i; j!=m_table.end(); j++)
+  {
+  if (CalculateDistance(i->second.position, nodePos) < range)
+        {
+        if (initialDistance>CalculateDistance (i->second.position, position))
+        //if (initialDistance>CalculateDistance ((i->second.position,position) position))
+        {
+        if (CalculateDistance(i->second.position, position)<CalculateDistance(m_table.find(candidate)->second.position, position))
+        candidate = i->first;
+        }
+        }
+  }
+
+  if(candidate.IsEqual(Ipv4Address::GetZero()))
+     return Ipv4Address::GetZero ();
+  else
+ {
+
+    
+//     NS_LOG_DEBUG ("BestNeighbor ID: " << candidate.Print()); //need to be modified
+//     NS_LOG_DEBUG ("Send packet to Position: " << bestPosition<<" From position"<<nodePos);
+    return candidate;
+ }
 }
 
 //  //找最佳的传输节点 position是给定目的节点的位置，nodePos是源节点速度,nodeVec是发送节点速度
@@ -393,7 +416,7 @@ PositionTable::BestNeighbor (Vector position, Vector nodePos, Vector nodeVec)
 
 
 /**
- * \brief Gets next hop according to GPSR recovery-mode protocol (right hand rule)
+ * \brief Gets next hop according to MYGPSR recovery-mode protocol (right hand rule)
  * \param previousHop the position of the node that sent the packet to this node
  * \param nodePos the position of the destination node
  * \return Ipv4Address of the next hop, Ipv4Address::GetZero () if no nighbour was found in greedy mode
@@ -469,6 +492,47 @@ PositionTable::GetAngle (Vector centrePos, Vector refPos, Vector node){
 }
 
 
+void PositionTable::TableUpdate (Time interval)
+{
+
+        double T = interval.GetSeconds();
+        
+        for (std::map<Ipv4Address,Metrix>::iterator count = m_table.begin(); count != m_table.end(); count++)
+        {
+                double dist_x = 0;
+                double dist_y = 0;
+
+                double t = Simulator::Now().GetSeconds() - count->second.time.GetSeconds();
+                if (count->second.velocity.size()<4)
+                {
+                        dist_x = count->second.position.x + count->second.velocity.back().x*t;  //calculate the distance with the last updated velocity
+                        dist_y = count->second.position.y + count->second.velocity.back().y*t;
+                }
+                else
+                {
+                        Eigen::Matrix4f metrix;
+                        metrix<< 1, 0, 0, 0,
+                        1, -T, T*T, -T*T*T,
+                        1, -2*T, 4*T*T, -8*T*T*T,
+                        1, -3*T, 9*T*T, -27*T*T*T;
+                        Eigen::Matrix4f inmetrix = metrix.inverse();
+                        Eigen::Vector4f velocity_x(count->second.velocity[3].x, count->second.velocity[2].x, count->second.velocity[1].x, count->second.velocity[0].x);
+                        Eigen::Vector4f coeffx = inmetrix*velocity_x;
+                        Eigen::Vector4f velocity_y(count->second.velocity[3].y, count->second.velocity[2].y, count->second.velocity[1].y, count->second.velocity[0].y);
+                        Eigen::Vector4f coeffy = inmetrix*velocity_y;
+                        
+                        dist_x = count->second.position.x + coeffx[0]*t + 0.5*coeffx[1]*t + double(1)/3*coeffx[2]*t + 0.25*coeffx[3]*t;
+                        dist_y = count->second.position.y + coeffy[0]*t + 0.5*coeffy[1]*t + double(1)/3*coeffy[2]*t + 0.25*coeffy[3]*t;
+                }
+                count->second.position.x = dist_x;
+                count->second.position.y = dist_y;
+                
+        }
+        
+        
+}
+
+
 
 
 
@@ -497,5 +561,5 @@ bool PositionTable::HasPosition (Ipv4Address id)
 }
 
 
-}   // gpsr
+}   // mygpsr
 } // ns3

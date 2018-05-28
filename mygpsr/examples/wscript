@@ -1,0 +1,31 @@
+## -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+def build(bld):
+    obj = bld.create_ns3_program('mygpsr',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test1.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test2',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test2.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test3',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test3.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test4',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test4.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test5',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test5.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test6',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test6.cc'
+
+    obj = bld.create_ns3_program('mygpsr-test7',
+                                 ['wifi', 'internet', 'mygpsr'])
+    obj.source = 'mygpsr-test7.cc'
+

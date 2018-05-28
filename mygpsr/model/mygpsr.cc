@@ -1,12 +1,12 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * GPSR
+ * MYGPSR
  *
  */
 #define NS_LOG_APPEND_CONTEXT                                           \
         if (m_ipv4) { std::clog << "[node " << m_ipv4->GetObject<Node> ()->GetId () << "] "; }
 
-#include "gpsr.h"
+#include "mygpsr.h"
 #include "ns3/log.h"
 #include "ns3/boolean.h"
 #include "ns3/random-variable-stream.h"
@@ -19,16 +19,17 @@
 #include <limits>
 #include <ns3/udp-header.h>
 #include "ns3/seq-ts-header.h"
+#include <cmath>
 
 
-#define GPSR_LS_GOD 0
+#define MYGPSR_LS_GOD 0
 
-#define GPSR_LS_RLS 1
+#define MYGPSR_LS_RLS 1
 
-NS_LOG_COMPONENT_DEFINE ("GpsrRoutingProtocol");
+NS_LOG_COMPONENT_DEFINE ("MyGpsrRoutingProtocol");
 
 namespace ns3 {
-namespace gpsr {
+namespace mygpsr {
 
 
 //先定义了DeferedRouteOutputTag的类，包含一个m_isCallFromL3的标志，初始化为0
@@ -46,7 +47,7 @@ struct DeferredRouteOutputTag : public Tag
 // TODO read ns3 api
         static TypeId GetTypeId ()
         {
-                static TypeId tid = TypeId ("ns3::gpsr::DeferredRouteOutputTag").SetParent<Tag> (); //设置parent的tid,获取<Tag>是模版
+                static TypeId tid = TypeId ("ns3::mygpsr::DeferredRouteOutputTag").SetParent<Tag> (); //设置parent的tid,获取<Tag>是模版
                 return tid;
         }
 
@@ -81,26 +82,28 @@ Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable> ();
 /********** Miscellaneous constants **********/
 
 /// Maximum allowed jitter.
-#define GPSR_MAXJITTER          (HelloInterval.GetSeconds () / 2)
-/// Random number between [(-GPSR_MAXJITTER)-GPSR_MAXJITTER] used to jitter HELLO packet transmission.
-#define JITTER (Seconds (x->GetValue (-GPSR_MAXJITTER, GPSR_MAXJITTER)))
-#define FIRST_JITTER (Seconds (x->GetValue (0, GPSR_MAXJITTER))) //first Hello can not be in the past, used only on SetIpv4
+#define MYGPSR_MAXJITTER          (HelloInterval.GetSeconds () / 2)
+/// Random number between [(-MYGPSR_MAXJITTER)-MYGPSR_MAXJITTER] used to jitter HELLO packet transmission.
+#define JITTER (Seconds (x->GetValue (-MYGPSR_MAXJITTER, MYGPSR_MAXJITTER)))
+#define FIRST_JITTER (Seconds (x->GetValue (0, MYGPSR_MAXJITTER))) //first Hello can not be in the past, used only on SetIpv4
 
 
 
 NS_OBJECT_ENSURE_REGISTERED (RoutingProtocol);
 
-/// UDP Port for GPSR control traffic, not defined by IANA yet
-const uint32_t RoutingProtocol::GPSR_PORT = 666;
+/// UDP Port for MYGPSR control traffic, not defined by IANA yet
+const uint32_t RoutingProtocol::MYGPSR_PORT = 666;
 
 //构造函数，初始化；
 RoutingProtocol::RoutingProtocol ()
         : HelloInterval (Seconds (3)),
+        m_range (500),
         MaxQueueLen (64),
         MaxQueueTime (Seconds (30)),
         m_queue (MaxQueueLen, MaxQueueTime),
         HelloIntervalTimer (Timer::CANCEL_ON_DESTROY),
         PerimeterMode (false)
+        
 {
         m_neighbors = PositionTable ();
 }
@@ -110,7 +113,7 @@ RoutingProtocol::RoutingProtocol ()
 TypeId
 RoutingProtocol::GetTypeId (void)
 {
-        static TypeId tid = TypeId ("ns3::gpsr::RoutingProtocol")
+        static TypeId tid = TypeId ("ns3::mygpsr::RoutingProtocol")
                             .SetParent<Ipv4RoutingProtocol> ()
                             .AddConstructor<RoutingProtocol> ()
                             .AddAttribute ("HelloInterval", "HELLO messages emission interval.",
@@ -118,14 +121,24 @@ RoutingProtocol::GetTypeId (void)
                                            MakeTimeAccessor (&RoutingProtocol::HelloInterval),
                                            MakeTimeChecker ())
                             .AddAttribute ("LocationServiceName", "Indicates wich Location Service is enabled",
-                                           EnumValue (GPSR_LS_GOD),
+                                           EnumValue (MYGPSR_LS_GOD),
                                            MakeEnumAccessor (&RoutingProtocol::LocationServiceName),
-                                           MakeEnumChecker (GPSR_LS_GOD, "GOD",
-                                                            GPSR_LS_RLS, "RLS"))
+                                           MakeEnumChecker (MYGPSR_LS_GOD, "GOD",
+                                                            MYGPSR_LS_RLS, "RLS"))
                             .AddAttribute ("PerimeterMode", "Indicates if PerimeterMode is enabled",
                                            BooleanValue (false),
                                            MakeBooleanAccessor (&RoutingProtocol::PerimeterMode),
                                            MakeBooleanChecker ())
+                            .AddAttribute ("CommunicationRange", "Calculate transmission range with Power",
+                                           DoubleValue (500.0),
+                                           MakeDoubleAccessor (&RoutingProtocol::m_range),
+                                           MakeDoubleChecker<double>())
+                            .AddAttribute ("TxPower", "Transmission power",
+                                           DoubleValue (20.0),
+                                           MakeDoubleAccessor(&RoutingProtocol::m_txPower),
+                                           MakeDoubleChecker<double>())
+
+
         ;
         return tid;
 }
@@ -162,7 +175,7 @@ bool RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
         NS_LOG_DEBUG("packet input"<<p->GetSize());
         if (m_socketAddresses.empty ())
         {
-                NS_LOG_LOGIC ("No gpsr interfaces");
+                NS_LOG_LOGIC ("No mygpsr interfaces");
                 return false;
         }
         NS_ASSERT (m_ipv4 != 0);
@@ -185,7 +198,7 @@ bool RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
         }
 
         // Ptr<Packet> packet = p->Copy ();
-        // TypeHeader tHeader (GPSRTYPE_POS);
+        // TypeHeader tHeader (MYGPSRTYPE_POS);
         // //去掉packet的包头
         // packet->RemoveHeader (tHeader);
         // //这个部分没有写，当作都valid
@@ -201,19 +214,19 @@ bool RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
         {
 
                 Ptr<Packet> packet = p->Copy ();
-                TypeHeader tHeader (GPSRTYPE_POS);
+                TypeHeader tHeader (MYGPSRTYPE_POS);
                 //去掉packet的包头
                 packet->RemoveHeader (tHeader);
                 //这个部分没有写，当作都valid
                 if (!tHeader.IsValid ())
                 {
-                        NS_LOG_DEBUG ("GPSR message " << packet->GetUid () << " with unknown type received: " << tHeader.Get () << ". Ignored");
+                        NS_LOG_DEBUG ("MYGPSR message " << packet->GetUid () << " with unknown type received: " << tHeader.Get () << ". Ignored");
                         NS_LOG_DEBUG ("RoutingInput meet error");
                         return false;
                 }
                 NS_LOG_DEBUG ("Received packet");
                 //如果是POS的包，就把POS的包头再去掉，所以不需要了解pos的信息了，直接去掉）
-                if (tHeader.Get () == GPSRTYPE_POS)
+                if (tHeader.Get () == MYGPSRTYPE_POS)
                 {
                         PositionHeader phdr;
                         packet->RemoveHeader (phdr);
@@ -277,7 +290,7 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
         if (m_socketAddresses.empty ())
         {
                 sockerr = Socket::ERROR_NOROUTETOHOST;
-                NS_LOG_LOGIC ("No gpsr interfaces");
+                NS_LOG_LOGIC ("No mygpsr interfaces");
                 Ptr<Ipv4Route> route;
                 return route;
         }
@@ -356,7 +369,7 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
         }
         else
         {
-                nextHop = m_neighbors.BestNeighbor (dstPos, myPos,myVec);
+                nextHop = m_neighbors.BestNeighbor (dstPos, myPos, HelloInterval, m_range);
         }
 
         if (nextHop != Ipv4Address::GetZero ())
@@ -365,7 +378,7 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
                 NS_LOG_DEBUG("Add header in Output");
                 uint32_t updated = (uint32_t) m_locationService->GetEntryUpdateTime (dst).GetSeconds ();
 
-                TypeHeader tHeader (GPSRTYPE_POS);
+                TypeHeader tHeader (MYGPSRTYPE_POS);
                 PositionHeader posHeader (dstPos.x, dstPos.y,  updated, (uint64_t) 0, (uint64_t) 0, (uint8_t) 0, myPos.x, myPos.y);
                 p->AddHeader (posHeader);
                 p->AddHeader (tHeader);
@@ -399,7 +412,7 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
                 // //packet add header
                 // uint32_t updated = (uint32_t) m_locationService->GetEntryUpdateTime (dst).GetSeconds ();
                 //
-                // TypeHeader tHeader (GPSRTYPE_POS);
+                // TypeHeader tHeader (MYGPSRTYPE_POS);
                 // PositionHeader posHeader (dstPos.x, dstPos.y,  updated, (uint64_t) 0, (uint64_t) 0, (uint8_t) 0, myPos.x, myPos.y);
                 // p->AddHeader (posHeader);
                 // p->AddHeader (tHeader);
@@ -515,7 +528,7 @@ RoutingProtocol::SendPacketFromQueue (Ipv4Address dst)
                 //找到目标节点坐标的位置
                 Vector dstPos = m_locationService->GetPosition (dst);
 
-                nextHop = m_neighbors.BestNeighbor (dstPos, myPos,myVec);
+                nextHop = m_neighbors.BestNeighbor (dstPos, myPos, HelloInterval, m_range);
                 if (nextHop == Ipv4Address::GetZero ())
                 {
                         NS_LOG_LOGIC ("Fallback to recovery-mode. Packets to " << dst);
@@ -540,15 +553,15 @@ RoutingProtocol::SendPacketFromQueue (Ipv4Address dst)
                         UnicastForwardCallback ucb = queueEntry.GetUnicastForwardCallback ();
                         Ipv4Header header = queueEntry.GetIpv4Header ();
 
-                        TypeHeader tHeader (GPSRTYPE_POS);
+                        TypeHeader tHeader (MYGPSRTYPE_POS);
                         p->RemoveHeader (tHeader);
                         if (!tHeader.IsValid ())
                         {
-                                NS_LOG_DEBUG ("GPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << ". Drop");
+                                NS_LOG_DEBUG ("MYGPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << ". Drop");
                                 NS_LOG_DEBUG ("recovery-mode meet error");
                                 return false;         // drop
                         }
-                        if (tHeader.Get () == GPSRTYPE_POS)
+                        if (tHeader.Get () == MYGPSRTYPE_POS)
                         {
                                 PositionHeader hdr;
                                 p->RemoveHeader (hdr);
@@ -616,14 +629,14 @@ RoutingProtocol::RecoveryMode(Ipv4Address dst, Ptr<Packet> p, UnicastForwardCall
 
 
         //因为recovery需要记录中途节点的位置（lastPos），需要展开包，记录下当前节点的位置信息
-        TypeHeader tHeader (GPSRTYPE_POS);
+        TypeHeader tHeader (MYGPSRTYPE_POS);
         p->RemoveHeader (tHeader);
         if (!tHeader.IsValid ())
         {
-                NS_LOG_DEBUG ("GPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << ". Drop");
+                NS_LOG_DEBUG ("MYGPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << ". Drop");
                 return; // drop
         }
-        if (tHeader.Get () == GPSRTYPE_POS)
+        if (tHeader.Get () == MYGPSRTYPE_POS)
         {
                 PositionHeader hdr;
                 p->RemoveHeader (hdr);
@@ -666,10 +679,10 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t interface)
 {
         NS_LOG_FUNCTION (this << m_ipv4->GetAddress (interface, 0).GetLocal ());
         Ptr<Ipv4L3Protocol> l3 = m_ipv4->GetObject<Ipv4L3Protocol> ();
-        //gpsr只能每个接口一个ip地址
+        //mygpsr只能每个接口一个ip地址
         if (l3->GetNAddresses (interface) > 1)
         {
-                NS_LOG_WARN ("GPSR does not work with more then one address per each interface.");
+                NS_LOG_WARN ("MYGPSR does not work with more then one address per each interface.");
         }
 
         Ipv4InterfaceAddress iface = l3->GetAddress (interface, 0);
@@ -683,8 +696,8 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t interface)
         Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (),
                                                    UdpSocketFactory::GetTypeId ());
         NS_ASSERT (socket != 0);
-        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvGPSR, this));
-        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), GPSR_PORT));
+        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvMYGPSR, this));
+        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), MYGPSR_PORT));
         socket->BindToNetDevice (l3->GetNetDevice (interface));
         socket->SetAllowBroadcast (true);
         socket->SetAttribute ("IpTtl", UintegerValue (1));
@@ -710,25 +723,25 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t interface)
 
 //接受到socket的包
 void
-RoutingProtocol::RecvGPSR (Ptr<Socket> socket)
+RoutingProtocol::RecvMYGPSR (Ptr<Socket> socket)
 {
         NS_LOG_FUNCTION (this << socket);
         Address sourceAddress;
         Ptr<Packet> packet = socket->RecvFrom (sourceAddress);
         //RemoveHeader
-        // TypeHeader tHeader1 (GPSRTYPE_HELLO);
+        // TypeHeader tHeader1 (MYGPSRTYPE_HELLO);
         // packet->RemoveHeader (tHeader1);
         // PositionHeader pHeader ;
         // packet->RemoveHeader (pHeader);
         //packet->RemoveAtStart(54);
         NS_LOG_DEBUG("received hello packet"<<packet->GetSize());
 
-        TypeHeader tHeader (GPSRTYPE_HELLO);
+        TypeHeader tHeader (MYGPSRTYPE_HELLO);
         packet->RemoveHeader (tHeader);
         if (!tHeader.IsValid ())
         {
-                NS_LOG_DEBUG ("GPSR message " << packet->GetUid () << " with unknown type received: " << tHeader.Get () << ". Ignored");
-                NS_LOG_DEBUG ("RecvGPSR meet error");
+                NS_LOG_DEBUG ("MYGPSR message " << packet->GetUid () << " with unknown type received: " << tHeader.Get () << ". Ignored");
+                NS_LOG_DEBUG ("RecvMYGPSR meet error");
                 return;
         }
 
@@ -737,20 +750,41 @@ RoutingProtocol::RecvGPSR (Ptr<Socket> socket)
         Vector Position;
         Position.x = hdr.GetOriginPosx ();
         Position.y = hdr.GetOriginPosy ();
+        // NS_LOG_UNCOND("this is a interupt");
+        
         InetSocketAddress inetSourceAddr = InetSocketAddress::ConvertFrom (sourceAddress);
+        Ipv4Address Ipv4Source = inetSourceAddr.GetIpv4();
+        Vector velocity = PositionTable::GetVelocity (Ipv4Address::ConvertFrom(Ipv4Source));//mine
+
         Ipv4Address sender = inetSourceAddr.GetIpv4 ();
         Ipv4Address receiver = m_socketAddresses[socket].GetLocal ();
         NS_LOG_DEBUG("update position"<<Position.x<<Position.y );
+
+        //update my communication range
+        double positionX;
+        double positionY;
+
+        Ptr<MobilityModel> MM = m_ipv4->GetObject<MobilityModel> ();
+
+        positionX = MM->GetPosition ().x;
+        positionY = MM->GetPosition ().y;
+
+        double distance = sqrt((positionX-Position.x)*(positionX-Position.x) + (positionY-Position.y)*(positionY-Position.y));
+        
+        //double range = 1.0*pow(10,(46.6777+10*3*std::log10(distance/1.0)+real_loss-threshold));
+        double range = distance*pow(10, ((m_txPower+96)/30));
+        m_range = range;
+        
         //更新neighbor的信息
-        UpdateRouteToNeighbor (sender, receiver, Position);
+        UpdateRouteToNeighbor (sender, receiver, Position, velocity);
 
 }
 
 
 void
-RoutingProtocol::UpdateRouteToNeighbor (Ipv4Address sender, Ipv4Address receiver, Vector Pos)
+RoutingProtocol::UpdateRouteToNeighbor (Ipv4Address sender, Ipv4Address receiver, Vector Pos, Vector velocity)
 {
-        m_neighbors.AddEntry (sender, Pos);
+        m_neighbors.AddEntry (sender, Pos, velocity);
 }
 
 
@@ -781,7 +815,7 @@ RoutingProtocol::NotifyInterfaceDown (uint32_t interface)
         m_socketAddresses.erase (socket);
         if (m_socketAddresses.empty ())
         {
-                NS_LOG_LOGIC ("No gpsr interfaces");
+                NS_LOG_LOGIC ("No mygpsr interfaces");
                 m_neighbors.Clear ();
                 m_locationService->Clear ();
                 return;
@@ -832,9 +866,9 @@ void RoutingProtocol::NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress
                         Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (),
                                                                    UdpSocketFactory::GetTypeId ());
                         NS_ASSERT (socket != 0);
-                        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvGPSR,this));
+                        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvMYGPSR,this));
                         // Bind to any IP address so that broadcasts can be received
-                        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), GPSR_PORT));
+                        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), MYGPSR_PORT));
                         socket->BindToNetDevice (l3->GetNetDevice (interface));
                         socket->SetAllowBroadcast (true);
                         m_socketAddresses.insert (std::make_pair (socket, iface));
@@ -844,7 +878,7 @@ void RoutingProtocol::NotifyAddAddress (uint32_t interface, Ipv4InterfaceAddress
         }
         else
         {
-                NS_LOG_LOGIC ("GPSR does not work with more then one address per each interface. Ignore added address");
+                NS_LOG_LOGIC ("MYGPSR does not work with more then one address per each interface. Ignore added address");
         }
 }
 //删除出地址
@@ -865,9 +899,9 @@ RoutingProtocol::NotifyRemoveAddress (uint32_t i, Ipv4InterfaceAddress address)
                         Ptr<Socket> socket = Socket::CreateSocket (GetObject<Node> (),
                                                                    UdpSocketFactory::GetTypeId ());
                         NS_ASSERT (socket != 0);
-                        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvGPSR, this));
+                        socket->SetRecvCallback (MakeCallback (&RoutingProtocol::RecvMYGPSR, this));
                         // Bind to any IP address so that broadcasts can be received
-                        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), GPSR_PORT));
+                        socket->Bind (InetSocketAddress (Ipv4Address::GetAny (), MYGPSR_PORT));
                         socket->SetAllowBroadcast (true);
                         m_socketAddresses.insert (std::make_pair (socket, iface));
 
@@ -877,7 +911,7 @@ RoutingProtocol::NotifyRemoveAddress (uint32_t i, Ipv4InterfaceAddress address)
                 }
                 if (m_socketAddresses.empty ())
                 {
-                        NS_LOG_LOGIC ("No gpsr interfaces");
+                        NS_LOG_LOGIC ("No mygpsr interfaces");
                         m_neighbors.Clear ();
                         m_locationService->Clear ();
                         return;
@@ -885,12 +919,12 @@ RoutingProtocol::NotifyRemoveAddress (uint32_t i, Ipv4InterfaceAddress address)
         }
         else
         {
-                NS_LOG_LOGIC ("Remove address not participating in GPSR operation");
+                NS_LOG_LOGIC ("Remove address not participating in MYGPSR operation");
         }
 }
 
 void
-RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)
+RoutingProtocol::SetIpv4 (Ptr<Ipv4> ipv4)//when internetstack was created, it was called by Ipv4Protocol
 {
         NS_ASSERT (ipv4 != 0);
         NS_ASSERT (m_ipv4 == 0);
@@ -929,6 +963,11 @@ RoutingProtocol::SendHello ()
         positionX = MM->GetPosition ().x;
         positionY = MM->GetPosition ().y;
 
+        //Vector myVec;
+        //myVec=MM->GetVelocity();
+        //std::cout<< this<< ' '<< myVec.x<< std::endl;
+        //std::cout<< this<< ' '<< myVec.y<< std::endl;//Output the velocity log
+
         for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
         {
                 Ptr<Socket> socket = j->first;
@@ -937,7 +976,7 @@ RoutingProtocol::SendHello ()
 
                 Ptr<Packet> packet = Create<Packet> ();
                 packet->AddHeader (helloHeader);
-                TypeHeader tHeader (GPSRTYPE_HELLO);
+                TypeHeader tHeader (MYGPSRTYPE_HELLO);
                 packet->AddHeader (tHeader);
                 // Send to all-hosts broadcast if on /32 addr, subnet-directed otherwise
                 Ipv4Address destination;
@@ -951,7 +990,7 @@ RoutingProtocol::SendHello ()
                         destination = iface.GetBroadcast ();
                         NS_LOG_DEBUG("Send hello to destination"<<destination );
                 }
-                socket->SendTo (packet, 0, InetSocketAddress (destination, GPSR_PORT));
+                socket->SendTo (packet, 0, InetSocketAddress (destination, MYGPSR_PORT));
 
         }
 }
@@ -986,11 +1025,11 @@ RoutingProtocol::Start ()
 
         switch (LocationServiceName)
         {
-        case GPSR_LS_GOD:
+        case MYGPSR_LS_GOD:
                 NS_LOG_DEBUG ("GodLS in use");
                 m_locationService = CreateObject<GodLocationService> ();
                 break;
-        case GPSR_LS_RLS:
+        case MYGPSR_LS_RLS:
                 NS_LOG_UNCOND ("RLS not yet implemented");
                 break;
         }
@@ -1027,7 +1066,7 @@ RoutingProtocol::LoopbackRoute (const Ipv4Header & hdr, Ptr<NetDevice> oif)
         {
                 rt->SetSource (j->second.GetLocal ());
         }
-        NS_ASSERT_MSG (rt->GetSource () != Ipv4Address (), "Valid GPSR source address not found");
+        NS_ASSERT_MSG (rt->GetSource () != Ipv4Address (), "Valid MYGPSR source address not found");
         rt->SetGateway (Ipv4Address ("127.0.0.1"));
         NS_LOG_DEBUG("return to LoopbackRoute");
         rt->SetOutputDevice (m_lo);
@@ -1038,7 +1077,7 @@ RoutingProtocol::LoopbackRoute (const Ipv4Header & hdr, Ptr<NetDevice> oif)
 int
 RoutingProtocol::GetProtocolNumber (void) const
 {
-        return GPSR_PORT;
+        return MYGPSR_PORT;
 }
 
 //源节点而不是中间节点，增加的包头(不是内部packet包头）而是route包头AddHeaders),好像没有用到
@@ -1063,7 +1102,7 @@ RoutingProtocol::AddHeaders (Ptr<Packet> p, Ipv4Address source, Ipv4Address dest
         }
         else
         {
-                nextHop = m_neighbors.BestNeighbor (m_locationService->GetPosition (destination), myPos,myVec);
+                nextHop = m_neighbors.BestNeighbor (m_locationService->GetPosition (destination), myPos, HelloInterval, m_range);
         }
 
         uint16_t positionX = 0;
@@ -1079,7 +1118,7 @@ RoutingProtocol::AddHeaders (Ptr<Packet> p, Ipv4Address source, Ipv4Address dest
 
         PositionHeader posHeader (positionX, positionY,  hdrTime, (uint64_t) 0,(uint64_t) 0, (uint8_t) 0, myPos.x, myPos.y);
         p->AddHeader (posHeader);
-        TypeHeader tHeader (GPSRTYPE_POS);
+        TypeHeader tHeader (MYGPSRTYPE_POS);
         p->AddHeader (tHeader);
 
         m_downTarget (p, source, destination, protocol, route);
@@ -1104,7 +1143,7 @@ RoutingProtocol::Forwarding (Ptr<const Packet> packet, const Ipv4Header & header
         Vector RecPosition;
         uint8_t inRec = 0;
 
-        TypeHeader tHeader (GPSRTYPE_POS);
+        TypeHeader tHeader (MYGPSRTYPE_POS);
         PositionHeader hdr;
 
         //尝试看看是不是tag的问题，好像不是
@@ -1116,11 +1155,11 @@ RoutingProtocol::Forwarding (Ptr<const Packet> packet, const Ipv4Header & header
         if (!tHeader.IsValid ())
         //if (!tHeader.IsValid ())
         {
-                NS_LOG_DEBUG ("GPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << " Drop");
+                NS_LOG_DEBUG ("MYGPSR message " << p->GetUid () << " with unknown type received: " << tHeader.Get () << " Drop");
                 NS_LOG_DEBUG ("Forwarding meet packet drop because tHeader Deserialize failed "<<tHeader.IsValid ());
                 return false; // drop
         }
-        if (tHeader.Get () == GPSRTYPE_POS)
+        if (tHeader.Get () == MYGPSRTYPE_POS)
         {
 
                 p->RemoveHeader (hdr);
@@ -1174,7 +1213,7 @@ RoutingProtocol::Forwarding (Ptr<const Packet> packet, const Ipv4Header & header
         }
         else
         {
-                nextHop = m_neighbors.BestNeighbor (Position, myPos, myVec);
+                nextHop = m_neighbors.BestNeighbor (Position, myPos, HelloInterval, m_range);
         }
 
         if (nextHop != Ipv4Address::GetZero ())
@@ -1274,6 +1313,11 @@ RoutingProtocol::GetDownTarget (void) const
         return m_downTarget;
 }
 
+void
+RoutingProtocol::UpdatePower (double power)
+{
+        m_txPower = power;
+}
 
 }
 
