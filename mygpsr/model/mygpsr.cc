@@ -963,10 +963,10 @@ RoutingProtocol::SendHello ()
         positionX = MM->GetPosition ().x;
         positionY = MM->GetPosition ().y;
 
-        //Vector myVec;
-        //myVec=MM->GetVelocity();
-        //std::cout<< this<< ' '<< myVec.x<< std::endl;
-        //std::cout<< this<< ' '<< myVec.y<< std::endl;//Output the velocity log
+        Vector myVec;
+        myVec=MM->GetVelocity();
+        std::cout<< this<< ' '<< myVec.x<< std::endl;
+        std::cout<< this<< ' '<< myVec.y<< std::endl;//Output the velocity log
 
         for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
         {

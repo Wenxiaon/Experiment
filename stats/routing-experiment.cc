@@ -82,6 +82,12 @@
 #include "ns3/gpsr-helper.h"
 #include "ns3/mygpsr-module.h"
 #include "ns3/mygpsr-helper.h"
+#include "ns3/seq-ts-header.h"
+#include "ns3/wave-net-device.h"
+#include "ns3/wave-mac-helper.h"
+#include "ns3/wave-helper.h"
+#include "ns3/ocb-wifi-mac.h"
+#include "ns3/wifi-80211p-helper.h"
 
 
 using namespace ns3;
@@ -320,11 +326,12 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
 
   double TotalTime = 53.0;
   std::string rate ("2048bps");
-  std::string phyMode ("DsssRate11Mbps");
+  std::string phyMode ("OfdmRate6MbpsBW10MHz");
   // std::string tr_name ("../experiment-statistics/manet-routing-compare");
   int nodeSpeed = 23; //in m/s
   int nodePause = 0; //in s
   m_protocolName = "protocol";
+  bool verbose = false;
 
   Config::SetDefault  ("ns3::OnOffApplication::PacketSize",StringValue ("64"));
   Config::SetDefault ("ns3::OnOffApplication::DataRate",  StringValue (rate));
@@ -336,26 +343,32 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
   adhocNodes.Create (nWifis);
 
   // setting up wifi phy and channel using helpers
-  WifiHelper wifi;
-  wifi.SetStandard (WIFI_PHY_STANDARD_80211b);
-
   YansWifiPhyHelper wifiPhy =  YansWifiPhyHelper::Default ();
-  YansWifiChannelHelper wifiChannel;
-  wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
-  wifiChannel.AddPropagationLoss ("ns3::FriisPropagationLossModel");
-  wifiPhy.SetChannel (wifiChannel.Create ());
-
-  // Add a mac and disable rate control
-  WifiMacHelper wifiMac;
-  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
-                                "DataMode",StringValue (phyMode),
-                                "ControlMode",StringValue (phyMode));
-
   wifiPhy.Set ("TxPowerStart",DoubleValue (txp));
   wifiPhy.Set ("TxPowerEnd", DoubleValue (txp));
+  YansWifiChannelHelper wifiChannel;
+  wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
+  wifiChannel.AddPropagationLoss ("ns3::LogDistancePropagationLossModel");
+  wifiChannel.AddPropagationLoss ("ns3::NakagamiPropagationLossModel");
 
-  wifiMac.SetType ("ns3::AdhocWifiMac");
-  NetDeviceContainer adhocDevices = wifi.Install (wifiPhy, wifiMac, adhocNodes);
+  Ptr<YansWifiChannel> channel = wifiChannel.Create ();
+  wifiPhy.SetChannel (channel);
+
+  // ns-3 supports generate a pcap trace and Add a wifiNetDevice
+  wifiPhy.SetPcapDataLinkType (YansWifiPhyHelper::DLT_IEEE802_11);
+  NqosWaveMacHelper wifi80211pMac = NqosWaveMacHelper::Default ();
+  Wifi80211pHelper wifi80211p = Wifi80211pHelper::Default ();
+  if (verbose)
+    {
+      wifi80211p.EnableLogComponents ();      // Turn on all Wifi 802.11p logging
+    }
+
+  wifi80211p.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
+                                      "DataMode",StringValue (phyMode),
+                                      "ControlMode",StringValue (phyMode));
+
+  //No setting the Tx power or MAC type                                      
+  NetDeviceContainer adhocDevices = wifi80211p.Install (wifiPhy, wifi80211pMac, adhocNodes);
 
   MobilityHelper mobility;
   mobility.SetMobilityModel ("ns3::GaussMarkovMobilityModel",
@@ -367,8 +380,8 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
     "NormalVelocity", StringValue ("ns3::NormalRandomVariable[Mean=0.0|Variance=0.0|Bound=0.0]"),
     "NormalDirection", StringValue ("ns3::NormalRandomVariable[Mean=0.0|Variance=0.2|Bound=0.4]"));
   mobility.SetPositionAllocator ("ns3::RandomBoxPositionAllocator",
-    "X", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3000]"),
-    "Y", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3000]"),
+    "X", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3500]"),
+    "Y", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3500]"),
     "Z", StringValue ("ns3::UniformRandomVariable[Min=0|Max=0]"));
   mobility.Install (adhocNodes);
 
