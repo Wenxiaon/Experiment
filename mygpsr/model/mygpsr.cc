@@ -105,7 +105,7 @@ RoutingProtocol::RoutingProtocol ()
         PerimeterMode (false)
         
 {
-        m_neighbors = PositionTable ();
+        m_neighbors = PositionTable (HelloInterval);
 }
 
 

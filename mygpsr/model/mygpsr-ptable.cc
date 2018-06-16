@@ -15,10 +15,10 @@ namespace mygpsr {
    MYGPSR position table
  */
 
-PositionTable::PositionTable ()
+PositionTable::PositionTable (Time interval)
 {
         m_txErrorCallback = MakeCallback (&PositionTable::ProcessTxError, this);
-        m_entryLifeTime = Seconds (2); //FIXME fazer isto parametrizavel de acordo com tempo de hello
+        m_entryLifeTime = interval; //FIXME fazer isto parametrizavel de acordo com tempo de hello
 
 }
 

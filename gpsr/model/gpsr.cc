@@ -102,7 +102,7 @@ RoutingProtocol::RoutingProtocol ()
         HelloIntervalTimer (Timer::CANCEL_ON_DESTROY),
         PerimeterMode (false)
 {
-        m_neighbors = PositionTable ();
+        m_neighbors = PositionTable (HelloInterval);
 }
 
 

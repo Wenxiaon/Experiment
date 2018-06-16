@@ -26,7 +26,7 @@ class PositionTable
 {
 public:
   /// c-tor
-  PositionTable ();
+  PositionTable (Time interval);
 
   /**
    * \brief Gets the last time the entry was updated
