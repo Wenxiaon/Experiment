@@ -25,6 +25,7 @@ namespace gpsr {
 class PositionTable
 {
 public:
+  PositionTable()=default;
   /// c-tor
   PositionTable (Time interval);
 
