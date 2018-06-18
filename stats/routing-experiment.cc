@@ -295,11 +295,11 @@ main (int argc, char *argv[])
   NS_LOG_UNCOND ("Create the second csv file!");
 
   int nSinks = 10;
-  double txp = 20;
+  double txp = 30;
 
   for (int protocol = 5; protocol<=6; protocol++)
   {
-      for (int counts = 20; counts <= 100; counts+=5)
+      for (int counts = 20; counts <= 160; counts+=5)
     {
       experiment.Run (nSinks, txp, CSVfileName, protocol, counts);
     }
@@ -324,7 +324,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
 
   NS_LOG_UNCOND("Running on the nodes of " << nWifis);
 
-  double TotalTime = 53.0;
+  double TotalTime = 100.0;
   std::string rate ("2048bps");
   std::string phyMode ("OfdmRate6MbpsBW10MHz");
   // std::string tr_name ("../experiment-statistics/manet-routing-compare");
@@ -348,7 +348,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
   wifiPhy.Set ("TxPowerEnd", DoubleValue (txp));
   YansWifiChannelHelper wifiChannel;
   wifiChannel.SetPropagationDelay ("ns3::ConstantSpeedPropagationDelayModel");
-  wifiChannel.AddPropagationLoss ("ns3::LogDistancePropagationLossModel");
+  wifiChannel.AddPropagationLoss ("ns3::LogDistancePropagationLossModel", "ReferenceDistance", DoubleValue(1000), "ReferenceLoss", DoubleValue(100.568));
   wifiChannel.AddPropagationLoss ("ns3::NakagamiPropagationLossModel");
 
   Ptr<YansWifiChannel> channel = wifiChannel.Create ();
@@ -372,7 +372,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
 
   MobilityHelper mobility;
   mobility.SetMobilityModel ("ns3::GaussMarkovMobilityModel",
-    "Bounds", BoxValue (Box (0, 3000, 0, 3500, 0, 0)),
+    "Bounds", BoxValue (Box (0, 3000, 0, 3000, 0, 0)),
     "TimeStep", TimeValue (Seconds (3)),
     "Alpha", DoubleValue (0.85),
     "MeanVelocity", StringValue ("ns3::UniformRandomVariable[Min=14|Max=23]"),
@@ -380,8 +380,8 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
     "NormalVelocity", StringValue ("ns3::NormalRandomVariable[Mean=0.0|Variance=0.0|Bound=0.0]"),
     "NormalDirection", StringValue ("ns3::NormalRandomVariable[Mean=0.0|Variance=0.2|Bound=0.4]"));
   mobility.SetPositionAllocator ("ns3::RandomBoxPositionAllocator",
-    "X", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3500]"),
-    "Y", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3500]"),
+    "X", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3000]"),
+    "Y", StringValue ("ns3::UniformRandomVariable[Min=0|Max=3000]"),
     "Z", StringValue ("ns3::UniformRandomVariable[Min=0|Max=0]"));
   mobility.Install (adhocNodes);
 
@@ -449,7 +449,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
         internet.Install (adhocNodes);
     }
     
-      mygpsr.Install(adhocDevices);//Handover the power value
+      mygpsr.Install(adhocDevices);
   }
 
   NS_LOG_INFO ("assigning ip address");
@@ -477,7 +477,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
       Ptr<Node> appSource = NodeList::GetNode (i+nSinks);
       appSource->AddApplication (sender);
       Ptr<UniformRandomVariable> var = CreateObject<UniformRandomVariable>();
-      sender->SetStartTime (Seconds(var->GetValue (1.0, 2.0)));
+      sender->SetStartTime (Seconds(var->GetValue (1.0, 10.0)));
 
 
       /*AddressValue remoteAddress (InetSocketAddress (adhocInterfaces.GetAddress (i), port));
