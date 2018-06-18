@@ -449,7 +449,7 @@ RoutingExperiment::Run (int nSinks, double txp, std::string CSVfileName, int pro
         internet.Install (adhocNodes);
     }
     
-      mygpsr.Install(adhocDevices);
+      mygpsr.Install(adhocDevices);//Handover the power value
   }
 
   NS_LOG_INFO ("assigning ip address");
