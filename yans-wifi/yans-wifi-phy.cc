@@ -454,7 +454,7 @@ YansWifiPhy::StartReceivePacket (Ptr<Packet> packet,
 
   if (!m_caller.IsNull())
   {
-    m_caller(WToDbm(event->GetRxPowerW()));
+    m_caller(packet, WToDbm(event->GetRxPowerW()));
   }
 }
 
@@ -585,7 +585,7 @@ YansWifiPhy::EndReceive (Ptr<Packet> packet, enum WifiPreamble preamble, enum mp
 }
 
 void
-YansWifiPhy::SetCrossLayer (Callback<void, double> mycaller)
+YansWifiPhy::SetCrossLayer (Callback<void, Ptr<Packet>, double> mycaller)
 {
   m_caller=mycaller;
 }

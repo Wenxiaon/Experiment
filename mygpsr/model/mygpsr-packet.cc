@@ -55,9 +55,13 @@ TypeHeader::Deserialize (Buffer::Iterator start)
   switch (type)
     {
     case MYGPSRTYPE_HELLO:
-    case MYGPSRTYPE_POS:
       {
         m_type = (MessageType) type;
+        break;
+      }
+    case MYGPSRTYPE_POS:
+      {
+        m_type = (MessageType) type;//Transfer from the buffer type to MessageType
         break;
       }
     default:

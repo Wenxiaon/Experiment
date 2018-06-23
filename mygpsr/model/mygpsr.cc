@@ -760,6 +760,7 @@ RoutingProtocol::RecvMYGPSR (Ptr<Socket> socket)
         Ipv4Address receiver = m_socketAddresses[socket].GetLocal ();
         NS_LOG_DEBUG("update position"<<Position.x<<Position.y );
 
+        /*
         //update my communication range
         double positionX;
         double positionY;
@@ -774,7 +775,8 @@ RoutingProtocol::RecvMYGPSR (Ptr<Socket> socket)
         //double range = 1.0*pow(10,(46.6777+10*3*std::log10(distance/1.0)+real_loss-threshold));
         double range = distance*pow(10, ((m_txPower+96)/30));
         m_range = range;
-        
+        */
+
         //更新neighbor的信息
         UpdateRouteToNeighbor (sender, receiver, Position, velocity);
 
@@ -1314,9 +1316,68 @@ RoutingProtocol::GetDownTarget (void) const
 }
 
 void
-RoutingProtocol::UpdatePower (double power)
+RoutingProtocol::UpdatePowerAndRange (Ptr<Packet> packet, double power)
 {
         m_txPower = power;
+
+        Ptr<Packet> p = packet->Copy ();
+        TypeHeader tHeader (MYGPSRTYPE_HELLO);
+        //去掉packet的包头
+        p->RemoveHeader (tHeader);
+        double distance = 0;
+        Vector Position;
+        double positionX = 0;
+        double positionY = 0;
+
+        if (tHeader.Get()==MYGPSRTYPE_HELLO)
+        {
+                HelloHeader hdr;
+                p->RemoveHeader (hdr);
+                Vector Position;
+                Position.x = hdr.GetOriginPosx ();
+                Position.y = hdr.GetOriginPosy ();
+
+                Ptr<MobilityModel> MM = m_ipv4->GetObject<MobilityModel> ();
+
+                positionX = MM->GetPosition ().x;
+                positionY = MM->GetPosition ().y;
+
+                distance = sqrt((positionX-Position.x)*(positionX-Position.x) + (positionY-Position.y)*(positionY-Position.y));
+                //TODO
+                //Add a realationship between the distance and the power received
+
+        }
+        
+        else if (tHeader.Get()==MYGPSRTYPE_POS)
+        {
+                PositionHeader hdr;
+                p->RemoveHeader (hdr);
+                Position.x = hdr.GetDstPosx ();
+                Position.y = hdr.GetDstPosy ();
+
+                Ptr<MobilityModel> MM = m_ipv4->GetObject<MobilityModel> ();
+
+                positionX = MM->GetPosition ().x;
+                positionY = MM->GetPosition ().y;
+
+                distance = sqrt((positionX-Position.x)*(positionX-Position.x) + (positionY-Position.y)*(positionY-Position.y));
+                //TODO
+                //As above shown, needing a relationship between the distance and the power received
+
+        }
+
+        auto logloss = [] (double range) 
+        {
+                return 100+50*log10(range/1000);
+        };
+        
+        {
+                double loss = 30-power-logloss(distance);
+                double range = pow(10, ((30-loss+96-100)/50+3));
+                m_range = range;
+        }
+
+
 }
 
 }

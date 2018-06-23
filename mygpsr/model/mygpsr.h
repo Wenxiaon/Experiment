@@ -95,7 +95,7 @@ public:
     return;
   }
 
-  void UpdatePower (double power);
+  void UpdatePowerAndRange (Ptr<Packet> packet, double power);
 
 
 private:
