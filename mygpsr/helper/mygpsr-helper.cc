@@ -82,7 +82,7 @@ MyGpsrHelper::Install (NetDeviceContainer device) const
       Ptr<WifiNetDevice> device = (*i)->GetObject<WifiNetDevice>();
       Ptr<YansWifiPhy> phy = device->GetPhy()->GetObject<YansWifiPhy>();
       Ptr<Node> node = device->GetNode();
-      Callback<void, Ptr<Packet>, double> callback = MakeCallback(&mygpsr::RoutingProtocol::UpdatePowerAndRange, node->GetObject<mygpsr::RoutingProtocol>());
+      Callback<void, double> callback = MakeCallback(&mygpsr::RoutingProtocol::UpdatePower, node->GetObject<mygpsr::RoutingProtocol>());
 
       phy->SetCrossLayer (callback);
     }

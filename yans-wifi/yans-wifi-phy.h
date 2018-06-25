@@ -99,7 +99,7 @@ public:
   virtual void SetSleepMode (void);
   virtual void ResumeFromSleep (void);
   virtual Ptr<WifiChannel> GetChannel (void) const;
-  void SetCrossLayer (Callback<void, Ptr<Packet>, double> mycaller);
+  void SetCrossLayer (Callback<void, double> mycaller);
 
 protected:
   // Inherited
@@ -120,7 +120,7 @@ private:
 
   Ptr<YansWifiChannel> m_channel;        //!< YansWifiChannel that this YansWifiPhy is connected to
 
-  Callback <void, Ptr<Packet>, double> m_caller;
+  Callback <void, double> m_caller;
 };
 
 } //namespace ns3
